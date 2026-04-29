@@ -3,8 +3,8 @@ import Tracker from './Tracker';
 function App() {
   return (
     <div className="container-card mx-auto">
-      <h1>Simple WebAudio + WAAClock Demo</h1>
-      <p className="muted">Use controls below to start audio, play notes, or schedule a note 1s in the future.</p>
+      <h1>Tracker</h1>
+      <p className="muted">Building out a web-based impulse tracker</p>
       <div className="mt-4">
         <Tracker />
       </div>

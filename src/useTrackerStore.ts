@@ -1,22 +1,34 @@
 import { create } from 'zustand';
 import WAAClock, { Event } from './WAAClock';
+// import { immer } from 'zustand/middleware/immer';
+import { castDraft } from 'immer';
+
+type Channel = { waveform: string; steps: number[] };
 
 type TrackerState = {
-  audioCtx: AudioContext;
-  clock: WAAClock;
-  steps: number[];
+  channels: Channel[];
   currentStep: number;
   tickEvent: Event | null;
   tempo: number;
   playing: boolean;
 };
 
-export const useTrackerStore = create<TrackerState>(set => {
-  const audioCtx = new AudioContext();
+const audioCtx = new AudioContext();
+
+const clock = new WAAClock(audioCtx);
+
+export const useTrackerStore = create<TrackerState>(() => {
   return {
-    audioCtx,
-    clock: new WAAClock(audioCtx),
-    steps: [220, 440, 880, 440, 220, 0, 220, 0, 220, 440, 880, 440, 220, 0, 220, 0],
+    channels: [
+      {
+        waveform: 'sine',
+        steps: [220, 440, 880, 440, 220, 0, 220, 0, 220, 440, 880, 440, 220, 0, 220, 0],
+      },
+      {
+        waveform: 'sawtooth',
+        steps: [220, 0, 220, 0, 220, 440, 880, 440, 220, 0, 220, 0, 220, 440, 880, 440],
+      },
+    ],
     currentStep: 0,
     tickEvent: null,
     tempo: 120,
@@ -25,14 +37,14 @@ export const useTrackerStore = create<TrackerState>(set => {
 });
 
 export function playSteps() {
-  const { audioCtx, clock, tempo, playing, tickEvent } = useTrackerStore.getState();
+  const { tempo, playing, tickEvent } = useTrackerStore.getState();
 
   if (!playing) {
     useTrackerStore.setState({ currentStep: -1 });
 
     clock.start();
     useTrackerStore.setState({
-      tickEvent: clock.callbackAtTime(handleTick as () => void, audioCtx.currentTime).repeat(60 / tempo),
+      tickEvent: castDraft(clock.callbackAtTime(handleTick as () => void, audioCtx.currentTime).repeat(60 / tempo)),
       playing: true,
     });
   } else {
@@ -46,9 +58,10 @@ export function playSteps() {
   }
 }
 
-function playNote(audioCtx: AudioContext, deadline: number, frequency: number) {
+function playNote(audioCtx: AudioContext, deadline: number, frequency: number, waveform: string) {
   const oscillator = audioCtx.createOscillator();
   oscillator.frequency.setValueAtTime(frequency, deadline);
+  oscillator.type = waveform as OscillatorType;
   oscillator.start(deadline);
 
   const amplifier = audioCtx.createGain();
@@ -70,12 +83,14 @@ function playNote(audioCtx: AudioContext, deadline: number, frequency: number) {
 }
 
 function handleTick({ deadline }: { deadline: number }) {
-  const { currentStep, steps, audioCtx } = useTrackerStore.getState();
+  const { currentStep, channels } = useTrackerStore.getState();
 
   const nextStep = currentStep + 1;
   useTrackerStore.setState({ currentStep: nextStep });
 
-  if (steps[nextStep % steps.length]) {
-    playNote(audioCtx, deadline, steps[nextStep % steps.length]);
-  }
+  channels.forEach(channel => {
+    if (channel.steps[nextStep % channel.steps.length]) {
+      playNote(audioCtx, deadline, channel.steps[nextStep % channel.steps.length], channel.waveform);
+    }
+  });
 }
