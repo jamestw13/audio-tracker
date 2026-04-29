@@ -3,18 +3,42 @@ const CLOCK_DEFAULTS = {
   toleranceEarly: 0.001,
 };
 
+const PROCESSOR_NAME = 'waa-clock-processor';
+
+// Runs on the audio rendering thread. Posts a message every 4 render quanta
+// (~11.6ms at 44.1kHz), giving the main-thread scheduler a high-precision heartbeat
+// without the jitter of setInterval or the deprecation of ScriptProcessorNode.
+const WORKLET_CODE = `
+class WAAClockProcessor extends AudioWorkletProcessor {
+  constructor() {
+    super();
+    this._frameCount = 0;
+  }
+  process() {
+    this._frameCount++;
+    if (this._frameCount >= 4) {
+      this._frameCount = 0;
+      this.port.postMessage(null);
+    }
+    return true;
+  }
+}
+registerProcessor('${PROCESSOR_NAME}', WAAClockProcessor);
+`;
+
 export class Event {
   clock: WAAClock;
   deadline: number | null;
-  func: () => void;
+  func: (event?: Event) => void;
   _cleared: boolean;
   toleranceLate: number;
   toleranceEarly: number;
   _latestTime: number | null;
   _earliestTime: number | null;
   repeatTime: number | null;
+  onexpired?: (event: Event) => void;
 
-  constructor(clock: WAAClock, deadline: number, func: () => void) {
+  constructor(clock: WAAClock, deadline: number, func: (event?: Event) => void) {
     this.clock = clock;
     this.func = func;
     this._cleared = false;
@@ -36,9 +60,11 @@ export class Event {
   }
 
   repeat(time: number) {
-    if (time === 0) throw new Error('delay cannot be 0');
+    if (time === 0) throw new Error('repeat time cannot be 0');
     this.repeatTime = time;
-    if (!this.clock._hasEvent(this) && this.deadline !== null) this.schedule(this.deadline + this.repeatTime);
+    if (!this.clock._hasEvent(this) && this.deadline !== null) {
+      this.schedule(this.deadline + this.repeatTime);
+    }
     return this;
   }
 
@@ -73,20 +99,22 @@ export class Event {
   }
 
   timeStretch(tRef: number, ratio: number) {
-    if (this.isRepeated()) this.repeatTime = this.repeatTime * ratio;
+    if (this.isRepeated()) this.repeatTime = this.repeatTime! * ratio;
 
-    let deadline = tRef + ratio * (this.deadline - tRef);
+    let deadline = tRef + ratio * (this.deadline! - tRef);
     if (this.isRepeated()) {
-      while (this.clock.context.currentTime >= deadline - this.toleranceEarly) deadline += this.repeatTime;
+      while (this.clock.context.currentTime >= deadline - this.toleranceEarly) {
+        deadline += this.repeatTime!;
+      }
     }
     this.schedule(deadline);
   }
 
   _execute() {
-    if (this.clock._started === false) return;
+    if (!this.clock._started) return;
     this.clock._removeEvent(this);
 
-    if (this.clock.context.currentTime < this._latestTime) {
+    if (this.clock.context.currentTime < this._latestTime!) {
       try {
         this.func(this);
       } catch (err) {
@@ -96,91 +124,66 @@ export class Event {
       }
     } else {
       if (this.onexpired) this.onexpired(this);
-      console.warn('event expired');
+      console.warn('WAAClock: event expired');
     }
 
     if (!this.clock._hasEvent(this) && this.isRepeated() && !this._cleared) {
-      this.schedule(this.deadline + this.repeatTime);
+      this.schedule(this.deadline! + this.repeatTime!);
     }
   }
 
   _refreshEarlyLateDates() {
-    this._latestTime = this.deadline + this.toleranceLate;
-    this._earliestTime = this.deadline - this.toleranceEarly;
+    this._latestTime = this.deadline! + this.toleranceLate;
+    this._earliestTime = this.deadline! - this.toleranceEarly;
   }
 }
 
 export default class WAAClock {
   context: AudioContext;
-  tickMethod: string;
   toleranceEarly: number;
   toleranceLate: number;
   _events: Event[];
   _started: boolean;
-  _clockNode: ScriptProcessorNode | null;
-  _intervalId: number | null;
+  _clockNode: AudioWorkletNode | null;
+  _ready: Promise<void>;
 
-  constructor(
-    context: AudioContext,
-    opts: { tickMethod?: string; toleranceEarly?: number; toleranceLate?: number } = {},
-  ) {
+  constructor(context: AudioContext, opts: { toleranceEarly?: number; toleranceLate?: number } = {}) {
     this.context = context;
-    this.tickMethod =
-      opts.tickMethod || (context && context.createScriptProcessor ? 'ScriptProcessorNode' : 'setInterval');
-    this.toleranceEarly = typeof opts.toleranceEarly === 'number' ? opts.toleranceEarly : CLOCK_DEFAULTS.toleranceEarly;
-    this.toleranceLate = typeof opts.toleranceLate === 'number' ? opts.toleranceLate : CLOCK_DEFAULTS.toleranceLate;
-
+    this.toleranceEarly = opts.toleranceEarly ?? CLOCK_DEFAULTS.toleranceEarly;
+    this.toleranceLate = opts.toleranceLate ?? CLOCK_DEFAULTS.toleranceLate;
     this._events = [];
     this._started = false;
-
     this._clockNode = null;
-    this._intervalId = null;
+
+    // Load the worklet module eagerly so it is ready before the user hits play.
+    const blob = new Blob([WORKLET_CODE], { type: 'application/javascript' });
+    const url = URL.createObjectURL(blob);
+    this._ready = context.audioWorklet.addModule(url).finally(() => URL.revokeObjectURL(url));
   }
 
-  setTimeout(func, delay) {
-    return this._createEvent(func, this._absTime(delay));
-  }
-
-  callbackAtTime(func: () => void, deadline: number) {
+  callbackAtTime(func: (event?: Event) => void, deadline: number) {
     return this._createEvent(func, deadline);
   }
 
-  timeStretch(tRef, events, ratio) {
-    events.forEach(event => {
-      event.timeStretch(tRef, ratio);
-    });
+  setTimeout(func: (event?: Event) => void, delay: number) {
+    return this._createEvent(func, this._absTime(delay));
+  }
+
+  timeStretch(tRef: number, events: Event[], ratio: number) {
+    events.forEach(event => event.timeStretch(tRef, ratio));
     return events;
   }
 
-  start() {
+  async start() {
     if (this._started) return;
     this._started = true;
-    this._events = [];
+    this._events = []; // cleared synchronously — callbackAtTime() calls after this are safe
 
-    if (this.tickMethod === 'ScriptProcessorNode') {
-      const bufferSize = 256;
-      if (!this.context || typeof this.context.createScriptProcessor !== 'function') {
-        this._startInterval();
-        return;
-      }
-      this._clockNode = this.context.createScriptProcessor(bufferSize, 1, 1);
-      this._clockNode.connect(this.context.destination);
-      this._clockNode.onaudioprocess = () => {
-        setTimeout(() => {
-          this.tick();
-        }, 0);
-      };
-    } else if (this.tickMethod === 'setInterval') {
-      this._startInterval();
-    } else if (this.tickMethod === 'manual') {
-    } else {
-      throw new Error('invalid tickMethod ' + this.tickMethod);
-    }
-  }
+    await this._ready;
 
-  _startInterval() {
-    if (this._intervalId != null) return;
-    this._intervalId = setInterval(() => this.tick(), 16);
+    this._clockNode = new AudioWorkletNode(this.context, PROCESSOR_NAME);
+    this._clockNode.port.onmessage = () => this.tick();
+    this._clockNode.connect(this.context.destination);
   }
 
   stop() {
@@ -189,21 +192,17 @@ export default class WAAClock {
     if (this._clockNode) {
       try {
         this._clockNode.disconnect();
-      } catch (e) {
+      } catch {
         /* ignore */
       }
       this._clockNode = null;
-    }
-    if (this._intervalId != null) {
-      clearInterval(this._intervalId);
-      this._intervalId = null;
     }
   }
 
   tick() {
     let event = this._events.shift();
 
-    while (event && event._earliestTime <= this.context.currentTime) {
+    while (event && event._earliestTime! <= this.context.currentTime) {
       event._execute();
       event = this._events.shift();
     }
@@ -211,40 +210,40 @@ export default class WAAClock {
     if (event) this._events.unshift(event);
   }
 
-  _createEvent(func, deadline) {
+  _createEvent(func: (event?: Event) => void, deadline: number) {
     return new Event(this, deadline, func);
   }
 
-  _insertEvent(event) {
-    this._events.splice(this._indexByTime(event._earliestTime), 0, event);
+  _insertEvent(event: Event) {
+    this._events.splice(this._indexByTime(event._earliestTime!), 0, event);
   }
 
-  _removeEvent(event) {
+  _removeEvent(event: Event) {
     const ind = this._events.indexOf(event);
     if (ind !== -1) this._events.splice(ind, 1);
   }
 
-  _hasEvent(event) {
+  _hasEvent(event: Event) {
     return this._events.indexOf(event) !== -1;
   }
 
-  _indexByTime(deadline) {
+  _indexByTime(deadline: number) {
     let low = 0;
     let high = this._events.length;
-    let mid;
+    let mid: number;
     while (low < high) {
-      mid = Math.floor((low + high) / 2);
-      if (this._events[mid]._earliestTime < deadline) low = mid + 1;
+      mid = Math.floor(low + high) >> 1;
+      if (this._events[mid]._earliestTime! < deadline) low = mid + 1;
       else high = mid;
     }
     return low;
   }
 
-  _absTime(relTime) {
+  _absTime(relTime: number) {
     return relTime + this.context.currentTime;
   }
 
-  _relTime(absTime) {
+  _relTime(absTime: number) {
     return absTime - this.context.currentTime;
   }
 }

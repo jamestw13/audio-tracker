@@ -1,18 +1,22 @@
-import { useState, useRef } from 'react';
-import WAAClock from './WAAClock';
-
 import { Play, Square } from 'lucide-react';
-import { DrumMachine } from './basicBeat';
 
 import { playSteps, useTrackerStore } from './useTrackerStore';
 
 export default function Tracker() {
-  const { steps } = useTrackerStore();
-  const currentStep = useTrackerStore(state => state.currentStep);
+  const { steps, playing, currentStep } = useTrackerStore();
+
   return (
     <div className="controls-grid p-4">
       <button onClick={playSteps} className="mb-4 px-4 py-2 bg-green-500 text-white rounded">
-        Play Note
+        {playing ? (
+          <div className="flex items-center gap-2">
+            Stop <Square />
+          </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            Play <Play />
+          </div>
+        )}
       </button>
 
       <div className="grid">
@@ -57,33 +61,33 @@ export default function Tracker() {
   );
 }
 
-function ChannelComponent({ channel, setChannels, channelsRef, index, currentStep }) {
-  const chIndex = typeof channel?.index === 'number' ? channel.index : index;
+// function ChannelComponent({ channel, setChannels, channelsRef, index, currentStep }) {
+//   const chIndex = typeof channel?.index === 'number' ? channel.index : index;
 
-  return (
-    <div className="bg-blue-600 border border-blue-500 grid w-fit">
-      <div>Channel {chIndex + 1}</div>
-      <div className="grid">
-        {channel.steps.map((step, i) => (
-          <input
-            key={i}
-            type="number"
-            className={`border-2 ${currentStep % channel.steps.length === i ? 'bg-red-500' : 'bg-blue-500'} bg-transparent px-2 py-1`}
-            value={step}
-            onChange={e => {
-              setChannels(prev => {
-                const newChannels = [...prev];
-                newChannels[index] = {
-                  ...newChannels[index],
-                  steps: newChannels[index].steps.map((s, si) => (si === i ? Number(e.target.value) : s)),
-                };
-                channelsRef.current = newChannels;
-                return newChannels;
-              });
-            }}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
+//   return (
+//     <div className="bg-blue-600 border border-blue-500 grid w-fit">
+//       <div>Channel {chIndex + 1}</div>
+//       <div className="grid">
+//         {channel.steps.map((step, i) => (
+//           <input
+//             key={i}
+//             type="number"
+//             className={`border-2 ${currentStep % channel.steps.length === i ? 'bg-red-500' : 'bg-blue-500'} bg-transparent px-2 py-1`}
+//             value={step}
+//             onChange={e => {
+//               setChannels(prev => {
+//                 const newChannels = [...prev];
+//                 newChannels[index] = {
+//                   ...newChannels[index],
+//                   steps: newChannels[index].steps.map((s, si) => (si === i ? Number(e.target.value) : s)),
+//                 };
+//                 channelsRef.current = newChannels;
+//                 return newChannels;
+//               });
+//             }}
+//           />
+//         ))}
+//       </div>
+//     </div>
+//   );
+// }
