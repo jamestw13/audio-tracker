@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import WAAClock, { Event } from './WAAClock';
 // import { immer } from 'zustand/middleware/immer';
-import { castDraft } from 'immer';
+import { type NoteEnum, PitchTable } from './constants';
 
-type Channel = { waveform: string; steps: number[] };
+export type Channel = { waveform: string; steps: NoteEnum[] };
 
 type TrackerState = {
   channels: Channel[];
@@ -22,11 +22,45 @@ export const useTrackerStore = create<TrackerState>(() => {
     channels: [
       {
         waveform: 'sine',
-        steps: [220, 440, 880, 440, 220, 0, 220, 0, 220, 440, 880, 440, 220, 0, 220, 0],
+        steps: [
+          'C-4',
+          'E-4',
+          'G-4',
+          'E-4',
+          'C-4',
+          '---',
+          'C-4',
+          '---',
+          'C-4',
+          'E-4',
+          'G-4',
+          'E-4',
+          'C-4',
+          '---',
+          'C-4',
+          '---',
+        ],
       },
       {
         waveform: 'sawtooth',
-        steps: [220, 0, 220, 0, 220, 440, 880, 440, 220, 0, 220, 0, 220, 440, 880, 440],
+        steps: [
+          'E-4',
+          '---',
+          'D-4',
+          '---',
+          'E-4',
+          'F-4',
+          'G-4',
+          'F-4',
+          'E-4',
+          '---',
+          'D-4',
+          '---',
+          'E-4',
+          'F-4',
+          'G-4',
+          'F-4',
+        ],
       },
     ],
     currentStep: 0,
@@ -44,7 +78,7 @@ export function playSteps() {
 
     clock.start();
     useTrackerStore.setState({
-      tickEvent: castDraft(clock.callbackAtTime(handleTick as () => void, audioCtx.currentTime).repeat(60 / tempo)),
+      tickEvent: clock.callbackAtTime(handleTick as () => void, audioCtx.currentTime).repeat(60 / tempo / 4),
       playing: true,
     });
   } else {
@@ -58,9 +92,9 @@ export function playSteps() {
   }
 }
 
-function playNote(audioCtx: AudioContext, deadline: number, frequency: number, waveform: string) {
+function playNote(audioCtx: AudioContext, deadline: number, pitch: NoteEnum, waveform: string) {
   const oscillator = audioCtx.createOscillator();
-  oscillator.frequency.setValueAtTime(frequency, deadline);
+  oscillator.frequency.setValueAtTime(PitchTable[pitch], deadline);
   oscillator.type = waveform as OscillatorType;
   oscillator.start(deadline);
 
