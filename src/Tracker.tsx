@@ -23,32 +23,24 @@ export default function Tracker() {
       <div className={`flex justify-start`}>
         {channels.map((channel, i) => (
           <div key={i} className="grid">
-            <select
-              value={channel.waveform}
-              onChange={e =>
-                useTrackerStore.setState(state => ({
-                  channels: state.channels.map((c, ci) =>
-                    ci === i ? { ...c, waveform: e.target.value as (typeof WaveformTable)[number] } : c,
-                  ),
-                }))
-              }
-            >
-              {WaveformTable.map((waveform, j) => (
-                <option key={j} value={waveform}>
-                  {waveform}
-                </option>
-              ))}
-            </select>
-            <div className="grid">
+            <div className="flex flex-col border-2 border-gray-300 rounded">
               {channel.steps.map((step, j) => (
-                <input
-                  type="text"
-                  key={j}
-                  value={step}
-                  onKeyUp={e => keyUp(e, i, j, channel.steps)}
-                  onChange={() => {}}
-                  className={`border-2 border-gray-300 ${currentStep % channel.steps.length === j ? 'border-red-500' : 'border-gray-300'} rounded px-1 py-0`}
-                />
+                <div className="flex  items-center" key={j}>
+                  <input
+                    type="text"
+                    value={step.pitch}
+                    onKeyUp={e => pitchKeyUp(e, i, j, channel.steps)}
+                    onChange={() => {}}
+                    className={`${currentStep % channel.steps.length === j ? 'border-red-500' : 'border-gray-300'} px-1 py-0 max-w-fit`}
+                  />
+                  <input
+                    type="text"
+                    value={step.instrument}
+                    onKeyUp={e => instrumentKeyUp(e, i, j, channel.steps)}
+                    onChange={() => {}}
+                    className={`${currentStep % channel.steps.length === j ? 'border-red-500' : 'border-gray-300'} px-1 py-0`}
+                  />
+                </div>
               ))}
             </div>
           </div>
@@ -58,10 +50,36 @@ export default function Tracker() {
   );
 }
 
-function keyUp(e: React.KeyboardEvent<HTMLInputElement>, i: number, j: number, steps: NoteEnum[]) {
+function pitchKeyUp(
+  e: React.KeyboardEvent<HTMLInputElement>,
+  i: number,
+  j: number,
+  steps: { pitch: NoteEnum; instrument: number }[],
+) {
   const newSteps = [...steps];
-  newSteps[j] = pitchByKey[e.key] || '---';
-  useTrackerStore.setState(state => ({
-    channels: state.channels.map((c, ci) => (ci === i ? { ...c, steps: newSteps } : c)),
-  }));
+
+  newSteps[j] = { ...newSteps[j], pitch: pitchByKey[e.key] || '---' };
+  useTrackerStore.setState(state => {
+    const newChannel = { ...state.channels[i], steps: newSteps };
+    return {
+      channels: [...state.channels.slice(0, i), newChannel, ...state.channels.slice(i + 1)],
+    };
+  });
+}
+
+function instrumentKeyUp(
+  e: React.KeyboardEvent<HTMLInputElement>,
+  i: number,
+  j: number,
+  steps: { pitch: NoteEnum; instrument: number }[],
+) {
+  if (!WaveformTable[Number(e.key) || -1]) return;
+  const newSteps = [...steps];
+  newSteps[j] = { ...newSteps[j], instrument: Number(e.key) };
+  useTrackerStore.setState(state => {
+    const newChannel = { ...state.channels[i], steps: newSteps };
+    return {
+      channels: [...state.channels.slice(0, i), newChannel, ...state.channels.slice(i + 1)],
+    };
+  });
 }

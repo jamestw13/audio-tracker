@@ -1,9 +1,9 @@
 import { create } from 'zustand';
 import WAAClock, { Event } from './WAAClock';
 // import { immer } from 'zustand/middleware/immer';
-import { type NoteEnum, PitchTable } from './constants';
+import { type NoteEnum, PitchTable, WaveformTable } from './constants';
 
-export type Channel = { waveform: string; steps: NoteEnum[] };
+export type Channel = { steps: { pitch: NoteEnum; instrument: number }[] };
 
 type TrackerState = {
   channels: Channel[];
@@ -21,45 +21,43 @@ export const useTrackerStore = create<TrackerState>(() => {
   return {
     channels: [
       {
-        waveform: 'sine',
         steps: [
-          'C-4',
-          'E-4',
-          'G-4',
-          'E-4',
-          'C-4',
-          '---',
-          'C-4',
-          '---',
-          'C-4',
-          'E-4',
-          'G-4',
-          'E-4',
-          'C-4',
-          '---',
-          'C-4',
-          '---',
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: 'E-4', instrument: 0 },
+          { pitch: 'G-4', instrument: 0 },
+          { pitch: 'E-4', instrument: 0 },
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: '---', instrument: 0 },
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: '---', instrument: 0 },
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: 'E-4', instrument: 0 },
+          { pitch: 'G-4', instrument: 0 },
+          { pitch: 'E-4', instrument: 0 },
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: '---', instrument: 0 },
+          { pitch: 'C-4', instrument: 0 },
+          { pitch: '---', instrument: 0 },
         ],
       },
       {
-        waveform: 'sawtooth',
         steps: [
-          'E-4',
-          '---',
-          'D-4',
-          '---',
-          'E-4',
-          'F-4',
-          'G-4',
-          'F-4',
-          'E-4',
-          '---',
-          'D-4',
-          '---',
-          'E-4',
-          'F-4',
-          'G-4',
-          'F-4',
+          { pitch: 'E-4', instrument: 2 },
+          { pitch: '---', instrument: 2 },
+          { pitch: 'D-4', instrument: 2 },
+          { pitch: '---', instrument: 2 },
+          { pitch: 'E-4', instrument: 2 },
+          { pitch: 'F-4', instrument: 2 },
+          { pitch: 'G-4', instrument: 2 },
+          { pitch: 'F-4', instrument: 2 },
+          { pitch: 'E-4', instrument: 2 },
+          { pitch: '---', instrument: 2 },
+          { pitch: 'D-4', instrument: 2 },
+          { pitch: '---', instrument: 2 },
+          { pitch: 'E-4', instrument: 2 },
+          { pitch: 'F-4', instrument: 2 },
+          { pitch: 'G-4', instrument: 2 },
+          { pitch: 'F-4', instrument: 2 },
         ],
       },
     ],
@@ -124,7 +122,8 @@ function handleTick({ deadline }: { deadline: number }) {
 
   channels.forEach(channel => {
     if (channel.steps[nextStep % channel.steps.length]) {
-      playNote(audioCtx, deadline, channel.steps[nextStep % channel.steps.length], channel.waveform);
+      const step = channel.steps[nextStep % channel.steps.length];
+      playNote(audioCtx, deadline, step.pitch, WaveformTable[step.instrument]);
     }
   });
 }
