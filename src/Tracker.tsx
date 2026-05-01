@@ -23,7 +23,7 @@ export default function Tracker() {
       <div className={`flex justify-start`}>
         {channels.map((channel, i) => (
           <div key={i} className="grid">
-            <div className="flex flex-col border-2 border-gray-300 rounded">
+            <div className="flex flex-col border-2 border-gray-300 rounded-xs">
               {channel.steps.map((step, j) => (
                 <div className="flex  items-center" key={j}>
                   <input
@@ -31,14 +31,14 @@ export default function Tracker() {
                     value={step.pitch}
                     onKeyUp={e => pitchKeyUp(e, i, j, channel.steps)}
                     onChange={() => {}}
-                    className={`${currentStep % channel.steps.length === j ? 'border-red-500' : 'border-gray-300'} px-1 py-0 max-w-fit`}
+                    className={`w-12 ${currentStep % channel.steps.length === j ? 'bg-red-900' : j % 4 === 0 ? 'bg-blue-900' : j % 2 === 0 ? 'bg-gray-800' : 'bg-gray-900'} px-1 py-0 `}
                   />
                   <input
                     type="text"
                     value={step.instrument}
                     onKeyUp={e => instrumentKeyUp(e, i, j, channel.steps)}
                     onChange={() => {}}
-                    className={`${currentStep % channel.steps.length === j ? 'border-red-500' : 'border-gray-300'} px-1 py-0`}
+                    className={`w-12 ${currentStep % channel.steps.length === j ? 'bg-red-900' : j % 4 === 0 ? 'bg-blue-900' : j % 2 === 0 ? 'bg-gray-800' : 'bg-gray-900'} px-1 py-0 `}
                   />
                 </div>
               ))}
@@ -73,7 +73,7 @@ function instrumentKeyUp(
   j: number,
   steps: { pitch: NoteEnum; instrument: number }[],
 ) {
-  if (!WaveformTable[Number(e.key) || -1]) return;
+  if (!WaveformTable[Number(e.key)]) return;
   const newSteps = [...steps];
   newSteps[j] = { ...newSteps[j], instrument: Number(e.key) };
   useTrackerStore.setState(state => {
